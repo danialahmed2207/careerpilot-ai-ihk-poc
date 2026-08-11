@@ -1,0 +1,8 @@
+Alex Mustermann
+
+Cloud-Support-Projekt, 2025
+- Docker-Container für eine Webanwendung erstellt und auf AWS EC2 getestet.
+- Linux-Systeme administriert, Fehler dokumentiert und technische Rückfragen verständlich beantwortet.
+- GitHub Actions für automatisierte Build- und Qualitätstests verwendet.
+
+Kenntnisse: AWS, Docker, Linux, IT-Support, Git, CI/CD und Kundenkommunikation.

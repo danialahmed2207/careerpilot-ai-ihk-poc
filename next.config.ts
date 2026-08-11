@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Produce a self-contained server bundle for the portable Docker image.
+  output: "standalone",
 };
 
 export default nextConfig;

@@ -1,16 +1,24 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
+import { suggestRoles } from "./lib/role-suggestions";
 
 type AnalysisResult = {
   applicationId: string;
   score: number;
   matches: string[];
   gaps: string[];
+  profileHighlights: string[];
   cvSuggestions: string[];
   coverLetter: string;
   interviewQuestions: string[];
+  sourceSummary: string[];
   disclaimer: string;
+  provider: "rules" | "bedrock-claude" | "bedrock-nova";
+  model: string;
+  fallbackUsed: boolean;
+  resolvedTargetRole?: string;
+  resolvedCompany?: string;
 };
 
 const steps = ["Unterlagen", "Abgleich", "Bewerbungspaket", "Export"];
@@ -21,12 +29,104 @@ export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [targetRole, setTargetRole] = useState("");
+  const [company, setCompany] = useState("");
+  const [jobLink, setJobLink] = useState("");
+  const [jobText, setJobText] = useState("");
+  const [resumeText, setResumeText] = useState("");
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkNotice, setLinkNotice] = useState("");
+  const linkRequestActive = useRef(false);
+  const lastImportedLink = useRef("");
 
   const activeStep = result ? 2 : busy ? 1 : 0;
   const fileSummary = useMemo(
     () => files.map((file) => `${file.name} · ${(file.size / 1024).toFixed(0)} KB`),
     [files],
   );
+  const roleSuggestions = useMemo(() => suggestRoles(targetRole), [targetRole]);
+
+  async function importJobLink(force = false) {
+    const normalizedLink = jobLink.trim();
+    if (!normalizedLink || linkRequestActive.current || (!force && lastImportedLink.current === normalizedLink)) return;
+    linkRequestActive.current = true;
+    setLinkBusy(true);
+    setLinkNotice("");
+    setError("");
+    try {
+      const response = await fetch("/api/job-preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: normalizedLink }),
+      });
+      const payload = await response.json() as {
+        error?: string;
+        text?: string;
+        targetRole?: string;
+        company?: string;
+        warnings?: string[];
+      };
+      if (!response.ok) throw new Error(payload.error ?? "Stellenanzeige konnte nicht eingelesen werden.");
+      if (payload.text) setJobText(payload.text);
+      if (!targetRole && payload.targetRole) setTargetRole(payload.targetRole);
+      if (!company && payload.company) setCompany(payload.company);
+      lastImportedLink.current = normalizedLink;
+      setLinkNotice(payload.warnings?.[0] ?? "Stellenanzeige erkannt und übernommen. Bitte kurz prüfen.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Stellenanzeige konnte nicht eingelesen werden.");
+    } finally {
+      linkRequestActive.current = false;
+      setLinkBusy(false);
+    }
+  }
+
+  function downloadText(filename: string, content: string, type = "text/plain;charset=utf-8") {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadCoverLetter() {
+    const safeRole = (result?.resolvedTargetRole || "Zielposition").replace(/[^a-z0-9äöüß-]+/gi, "_");
+    downloadText(`Anschreiben_${safeRole}.txt`, coverLetter);
+  }
+
+  function downloadPackage() {
+    if (!result) return;
+    const packageText = [
+      "CAREERPILOT AI – GEPRÜFTES BEWERBUNGSPAKET",
+      `Zielposition: ${result.resolvedTargetRole ?? "laut Stellenanzeige"}`,
+      `Unternehmen: ${result.resolvedCompany ?? "laut Stellenanzeige"}`,
+      `Textabgleich: ${result.score}% (keine Eignungsbewertung)`,
+      "",
+      "PROFIL-HIGHLIGHTS",
+      ...result.profileHighlights.map((item) => `- ${item}`),
+      "",
+      "BELEGTE ÜBEREINSTIMMUNGEN",
+      ...result.matches.map((item) => `- ${item}`),
+      "",
+      "OFFENE PRÜFPOSITIONEN",
+      ...result.gaps.map((item) => `- ${item}`),
+      "",
+      "LEBENSLAUF-VORSCHLÄGE",
+      ...result.cvSuggestions.map((item) => `- ${item}`),
+      "",
+      "ANSCHREIBENENTWURF",
+      coverLetter,
+      "",
+      "INTERVIEWVORBEREITUNG",
+      ...result.interviewQuestions.map((item, index) => `${index + 1}. ${item}`),
+      "",
+      "QUELLEN UND HINWEIS",
+      ...result.sourceSummary.map((item) => `- ${item}`),
+      result.disclaimer,
+    ].join("\n");
+    downloadText("CareerPilot_Bewerbungspaket.txt", packageText);
+  }
 
   async function submitApplication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -63,6 +163,13 @@ export default function Home() {
     setCoverLetter("");
     setFiles([]);
     setError("");
+    setTargetRole("");
+    setCompany("");
+    setJobLink("");
+    setJobText("");
+    setResumeText("");
+    setLinkNotice("");
+    lastImportedLink.current = "";
   }
 
   return (
@@ -120,42 +227,73 @@ export default function Home() {
                 <input name="candidateName" required placeholder="z. B. Alex Mustermann" />
               </label>
               <label>
-                Zielposition *
-                <input name="targetRole" required placeholder="z. B. Cloud Support Specialist" />
+                Zielposition
+                <input
+                  name="targetRole"
+                  value={targetRole}
+                  onChange={(event) => setTargetRole(event.target.value)}
+                  autoComplete="organization-title"
+                  placeholder="Tippe z. B. IT oder Cloud"
+                />
+                {roleSuggestions.length > 0 && (
+                  <span className="suggestionList" aria-label="Vorschläge für Zielpositionen">
+                    {roleSuggestions.map((role) => (
+                      <button key={role} type="button" onClick={() => setTargetRole(role)}>{role}</button>
+                    ))}
+                  </span>
+                )}
               </label>
             </div>
 
             <div className="fieldGrid twoCols">
               <label>
-                Unternehmen *
-                <input name="company" required placeholder="z. B. Nordlicht Digital GmbH" />
+                Unternehmen
+                <input name="company" value={company} onChange={(event) => setCompany(event.target.value)} placeholder="Wird nach Möglichkeit aus dem Link erkannt" />
               </label>
               <label>
                 Stellenlink
-                <input name="jobLink" type="url" placeholder="https://…" />
+                <span className="linkInputRow">
+                  <input
+                    name="jobLink"
+                    type="url"
+                    value={jobLink}
+                    onChange={(event) => {
+                      setJobLink(event.target.value);
+                      setLinkNotice("");
+                    }}
+                    onBlur={() => { if (!jobText && jobLink) void importJobLink(); }}
+                    placeholder="https://…"
+                  />
+                  <button type="button" className="inlineButton" onClick={() => void importJobLink(true)} disabled={!jobLink || linkBusy}>
+                    {linkBusy ? "Lese…" : "Übernehmen"}
+                  </button>
+                </span>
+                {linkNotice && <small className="successText">✓ {linkNotice}</small>}
               </label>
             </div>
 
             <label>
-              Stellenbeschreibung *
+              Stellenbeschreibung
               <textarea
                 name="jobText"
-                required
-                minLength={80}
+                value={jobText}
+                onChange={(event) => setJobText(event.target.value)}
                 rows={7}
-                placeholder="Füge Aufgaben, Anforderungen und gewünschte Kenntnisse ein. Mindestens 80 Zeichen."
+                placeholder="Optional, wenn der Stellenlink automatisch gelesen werden kann. Auch ein kurzer relevanter Ausschnitt genügt."
               />
+              <small className="fieldHelp">Stellenlink oder Text genügt – keine starre Mindestzeichenzahl.</small>
             </label>
 
             <label>
-              Lebenslauftext oder belegte Erfahrungen *
+              Lebenslauftext oder belegte Erfahrungen
               <textarea
                 name="resumeText"
-                required
-                minLength={80}
+                value={resumeText}
+                onChange={(event) => setResumeText(event.target.value)}
                 rows={7}
-                placeholder="Füge ausschließlich nachweisbare Stationen, Kenntnisse und Projekte ein. Im POC wird kein Text aus Dateien ausgelesen."
+                placeholder="Optional bei einem lesbaren PDF-, DOCX- oder Text-Upload. Ergänze hier nur Informationen, die wirklich belegt sind."
               />
+              <small className="fieldHelp">Datei oder Text genügt. Inhalte aus PDF, DOCX und TXT werden automatisch extrahiert.</small>
             </label>
 
             <div className="uploadBlock">
@@ -163,7 +301,7 @@ export default function Home() {
                 <span className="uploadIcon">＋</span>
                 <span>
                   <b>Lebenslauf, Zeugnisse oder Screenshot ergänzen</b>
-                  <small>PDF, DOCX, PNG oder JPG · maximal 3 Dateien · je 5 MB</small>
+                  <small>PDF, DOCX, TXT, PNG oder JPG · maximal 3 Dateien · je 5 MB</small>
                 </span>
                 <span className="uploadAction">Dateien wählen</span>
               </label>
@@ -172,7 +310,7 @@ export default function Home() {
                 className="srOnly"
                 type="file"
                 multiple
-                accept=".pdf,.docx,.png,.jpg,.jpeg"
+                accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg"
                 onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, 3))}
               />
               {fileSummary.length > 0 && (
@@ -199,7 +337,7 @@ export default function Home() {
               <span className="kicker">Was passiert?</span>
               <ol>
                 <li><b>Eingaben validieren</b><span>Dateityp, Größe und Pflichtfelder</span></li>
-                <li><b>Belege abgleichen</b><span>Nur Begriffe aus deinen Eingaben</span></li>
+                <li><b>Dokumente verstehen</b><span>Text aus PDF, DOCX und TXT extrahieren</span></li>
                 <li><b>Entwürfe erzeugen</b><span>Anschreiben, CV-Hinweise, Interviewfragen</span></li>
                 <li><b>Du prüfst alles</b><span>Keine automatische Bewerbung</span></li>
               </ol>
@@ -208,12 +346,12 @@ export default function Home() {
               <span className="shield">◈</span>
               <div>
                 <h3>Privacy by Design</h3>
-                <p>Der Vorgang kann samt hochgeladenen Dateien direkt gelöscht werden.</p>
+                <p>Uploads werden analysiert, in der portablen Demo nicht dauerhaft gespeichert und der Vorgang bleibt löschbar.</p>
               </div>
             </div>
             <div className="card demoNote">
               <b>Demo-Modus</b>
-              <p>Die erste Version nutzt einen nachvollziehbaren Regelabgleich. Ein echtes Sprachmodell wird erst nach Provider-, Vertrags- und Datenschutzprüfung angeschlossen.</p>
+              <p>Die App unterstützt Amazon Nova oder Claude über Bedrock. Ist kein Modell freigegeben, arbeitet ein sichtbar gekennzeichneter, verbesserter Regel-Fallback weiter.</p>
             </div>
           </aside>
         </section>
@@ -224,6 +362,9 @@ export default function Home() {
               <span className="kicker">Analyse abgeschlossen</span>
               <h2>Dein prüfbares Bewerbungspaket</h2>
               <p>{result.disclaimer}</p>
+              <p className="providerLine">
+                Analysemodus: <b>{result.provider === "bedrock-claude" ? "Claude über Amazon Bedrock" : result.provider === "bedrock-nova" ? "Amazon Nova über Amazon Bedrock" : result.fallbackUsed ? "Regel-Fallback" : "Nachvollziehbarer Regelabgleich"}</b>
+              </p>
             </div>
             <div
               className="scoreRing"
@@ -231,9 +372,14 @@ export default function Home() {
               style={{ "--score": `${result.score}%` } as React.CSSProperties}
             >
               <strong>{result.score}%</strong>
-              <span>Demo-Match</span>
+              <span>Textabgleich</span>
             </div>
           </div>
+
+          <article className="card resultCard profileCard">
+            <div className="resultTitle"><span>◎</span><h3>Erkannte Profil-Highlights</h3></div>
+            <ul>{result.profileHighlights.map((item) => <li key={item}>{item}</li>)}</ul>
+          </article>
 
           <div className="resultGrid">
             <article className="card resultCard matchesCard">
@@ -246,6 +392,12 @@ export default function Home() {
               <small>Nicht automatisch als fehlende Fähigkeit bewerten – erst mit Nachweisen prüfen.</small>
             </article>
           </div>
+
+          <details className="card sourceDetails">
+            <summary>Verwendete Quellen und Verarbeitung</summary>
+            <ul>{result.sourceSummary.map((item) => <li key={item}>{item}</li>)}</ul>
+            <small>Originalunterlagen bleiben maßgeblich. Hochgeladene Dateien werden in der portablen Demo nicht dauerhaft gespeichert.</small>
+          </details>
 
           <article className="card editorCard">
             <div className="sectionHeading">
@@ -268,7 +420,9 @@ export default function Home() {
 
           <div className="resultActions">
             <button className="quietButton" type="button" onClick={deleteAndReset}>Vorgang löschen & neu starten</button>
-            <button className="primaryButton compact" type="button" onClick={() => window.print()}>Geprüfte Ansicht exportieren</button>
+            <button className="quietButton" type="button" onClick={downloadCoverLetter}>Anschreiben herunterladen</button>
+            <button className="quietButton" type="button" onClick={downloadPackage}>Gesamtpaket herunterladen</button>
+            <button className="primaryButton compact" type="button" onClick={() => window.print()}>Als PDF drucken</button>
           </div>
         </section>
       )}
