@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useMemo, useRef, useState } from "react";
 import { suggestRoles } from "./lib/role-suggestions";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, MAX_UPLOAD_MB } from "./lib/upload-policy";
 
 type AnalysisResult = {
   applicationId: string;
@@ -46,6 +47,25 @@ export default function Home() {
     [files],
   );
   const roleSuggestions = useMemo(() => suggestRoles(targetRole), [targetRole]);
+
+  function selectDocuments(event: ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.target.files ?? []);
+    if (selected.length > MAX_UPLOAD_FILES) {
+      setFiles([]);
+      setError(`Bitte wähle höchstens ${MAX_UPLOAD_FILES} Dateien aus.`);
+      event.target.value = "";
+      return;
+    }
+    const oversized = selected.find((file) => file.size > MAX_UPLOAD_BYTES);
+    if (oversized) {
+      setFiles([]);
+      setError(`${oversized.name} ist größer als ${MAX_UPLOAD_MB} MB.`);
+      event.target.value = "";
+      return;
+    }
+    setFiles(selected);
+    setError("");
+  }
 
   async function importJobLink(force = false) {
     const normalizedLink = jobLink.trim();
@@ -304,7 +324,7 @@ export default function Home() {
                 <span className="uploadIcon">＋</span>
                 <span>
                   <b>Lebenslauf, Zeugnisse oder Screenshot ergänzen</b>
-                  <small>PDF, DOCX, TXT, PNG oder JPG · maximal 3 Dateien · je 5 MB</small>
+                  <small>PDF, DOCX, TXT, PNG oder JPG · maximal {MAX_UPLOAD_FILES} Dateien · je {MAX_UPLOAD_MB} MB</small>
                 </span>
                 <span className="uploadAction">Dateien wählen</span>
               </label>
@@ -314,7 +334,7 @@ export default function Home() {
                 type="file"
                 multiple
                 accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg"
-                onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, 3))}
+                onChange={selectDocuments}
               />
               {fileSummary.length > 0 && (
                 <ul className="fileList">

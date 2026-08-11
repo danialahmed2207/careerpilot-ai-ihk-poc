@@ -1,5 +1,6 @@
 import { ensureDatabase } from "../../../db/init";
 import { importJobFromUrl } from "../../lib/job-import";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, MAX_UPLOAD_MB } from "../../lib/upload-policy";
 import { extractDocument } from "../../services/documents";
 import { analyzeApplication } from "../../services/analysis";
 
@@ -79,12 +80,16 @@ export async function POST(request: Request) {
     if (!candidateName) return Response.json({ error: "Bitte deinen Namen angeben." }, { status: 400 });
 
     const documents = form.getAll("documents").filter((item): item is File => item instanceof File && item.size > 0);
-    if (documents.length > 3) return Response.json({ error: "Maximal drei Dateien sind erlaubt." }, { status: 400 });
+    if (documents.length > MAX_UPLOAD_FILES) {
+      return Response.json({ error: `Maximal ${MAX_UPLOAD_FILES} Dateien sind erlaubt.` }, { status: 400 });
+    }
     for (const document of documents) {
       if (!allowedTypes.has(document.type) && !allowedExtensions.test(document.name)) {
         return Response.json({ error: `Nicht unterstützter Dateityp: ${document.name}` }, { status: 400 });
       }
-      if (document.size > 5 * 1024 * 1024) return Response.json({ error: `Datei ist größer als 5 MB: ${document.name}` }, { status: 400 });
+      if (document.size > MAX_UPLOAD_BYTES) {
+        return Response.json({ error: `Datei ist größer als ${MAX_UPLOAD_MB} MB: ${document.name}` }, { status: 400 });
+      }
     }
 
     let importedJob: Awaited<ReturnType<typeof importJobFromUrl>> | null = null;

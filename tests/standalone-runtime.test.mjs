@@ -41,10 +41,11 @@ after(() => {
 test("renders the improved application form", async () => {
   const response = await fetch(baseUrl);
   assert.equal(response.status, 200);
-  const html = await response.text();
+  const html = (await response.text()).replaceAll("<!-- -->", "");
   assert.match(html, /keine starre Mindestzeichenzahl/i);
   assert.match(html, /Amazon Nova oder Claude über Bedrock/i);
   assert.match(html, /PDF, DOCX und TXT/i);
+  assert.match(html, /maximal 5 Dateien · je 10 MB/i);
   assert.doesNotMatch(html, /Mindestens 80 Zeichen/i);
 });
 
@@ -128,4 +129,49 @@ test("extracts synthetic PDF and DOCX resumes", async () => {
     assert.ok(result.coverLetter.length >= 1_300);
     await fetch(`${baseUrl}/api/applications?id=${encodeURIComponent(result.applicationId)}`, { method: "DELETE" });
   }
+});
+
+test("accepts five supported document formats in one application", async () => {
+  const pdf = await readFile(new URL("./fixtures/synthetic-cv.pdf", import.meta.url));
+  const docx = await readFile(new URL("./fixtures/synthetic-cv.docx", import.meta.url));
+  const form = new FormData();
+  form.set("candidateName", "Alex Mustermann");
+  form.set("targetRole", "Cloud Support Specialist");
+  form.set("company", "Nordlicht Digital GmbH");
+  form.set("jobText", "Gesucht sind AWS, Docker, Linux, IT-Support und Kundenkommunikation.");
+  form.append("documents", new Blob([pdf], { type: "application/pdf" }), "synthetic-cv.pdf");
+  form.append("documents", new Blob([docx], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), "synthetic-cv.docx");
+  form.append("documents", new Blob(["AWS, Docker, Linux und IT-Support praktisch genutzt."], { type: "text/plain" }), "skills.txt");
+  form.append("documents", new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }), "zeugnis.png");
+  form.append("documents", new Blob([new Uint8Array([255, 216, 255, 217])], { type: "image/jpeg" }), "zertifikat.jpg");
+
+  const response = await fetch(`${baseUrl}/api/applications`, { method: "POST", body: form });
+  assert.equal(response.status, 201);
+  const result = await response.json();
+  for (const name of ["synthetic-cv.pdf", "synthetic-cv.docx", "skills.txt", "zeugnis.png", "zertifikat.jpg"]) {
+    assert.match(result.sourceSummary.join(" "), new RegExp(name.replace(".", "\\.")));
+  }
+  await fetch(`${baseUrl}/api/applications?id=${encodeURIComponent(result.applicationId)}`, { method: "DELETE" });
+});
+
+test("rejects a sixth document", async () => {
+  const form = new FormData();
+  form.set("candidateName", "Alex Mustermann");
+  form.set("jobText", "AWS und Docker im IT-Support.");
+  for (let index = 1; index <= 6; index += 1) {
+    form.append("documents", new Blob([`Nachweis ${index}: AWS und Docker.`], { type: "text/plain" }), `nachweis-${index}.txt`);
+  }
+  const response = await fetch(`${baseUrl}/api/applications`, { method: "POST", body: form });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Maximal 5 Dateien/i);
+});
+
+test("rejects a document larger than ten megabytes", async () => {
+  const form = new FormData();
+  form.set("candidateName", "Alex Mustermann");
+  form.set("jobText", "AWS und Docker im IT-Support.");
+  form.append("documents", new Blob([new Uint8Array(10 * 1024 * 1024 + 1)], { type: "text/plain" }), "zu-gross.txt");
+  const response = await fetch(`${baseUrl}/api/applications`, { method: "POST", body: form });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /größer als 10 MB/i);
 });

@@ -23,16 +23,11 @@ export async function extractDocument(file: File): Promise<ExtractedDocument> {
   const bytes = new Uint8Array(arrayBuffer);
 
   if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
-    const { PDFParse } = await import("pdf-parse");
-    const { createRequire } = await import("node:module");
-    const { dirname, join } = await import("node:path");
-    const { pathToFileURL } = await import("node:url");
-    const require = createRequire(import.meta.url);
-    const packageEntry = require.resolve("pdf-parse");
-    PDFParse.setWorker(pathToFileURL(join(dirname(packageEntry), "pdf.worker.mjs")).href);
-    const parser = new PDFParse({ data: bytes });
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    let pdf: Awaited<ReturnType<typeof getDocumentProxy>> | null = null;
     try {
-      const result = await parser.getText();
+      pdf = await getDocumentProxy(bytes);
+      const result = await extractText(pdf, { mergePages: true });
       const text = normalizeText(result.text);
       return {
         name: file.name,
@@ -41,8 +36,10 @@ export async function extractDocument(file: File): Promise<ExtractedDocument> {
         bytes,
         warning: text ? undefined : "Das PDF enthält wahrscheinlich nur ein Bild. Im KI-Modus kann eine visuelle Analyse versucht werden.",
       };
+    } catch {
+      throw new Error("PDF konnte nicht gelesen werden. Bitte prüfe, ob die Datei geöffnet werden kann oder passwortgeschützt ist.");
     } finally {
-      await parser.destroy();
+      await pdf?.cleanup();
     }
   }
 
