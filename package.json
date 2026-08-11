@@ -17,9 +17,9 @@
     "@aws-sdk/client-bedrock-runtime": "3.1107.0",
     "drizzle-orm": "0.45.2",
     "mammoth": "^1.12.1",
-    "pdf-parse": "^2.4.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "unpdf": "^1.8.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.51.2",

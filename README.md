@@ -6,7 +6,7 @@ CareerPilot AI unterstützt Bewerbende dabei, belegte Erfahrungen mit einer konk
 
 - Stellenlink automatisch einlesen; strukturierte `JobPosting`-Daten werden bevorzugt
 - Vorschläge für Zielpositionen schon bei kurzen Eingaben wie `IT`
-- PDF-, DOCX-, TXT-, Markdown-, PNG- und JPG-Upload, maximal drei Dateien à 5 MB
+- PDF-, DOCX-, TXT-, Markdown-, PNG- und JPG-Upload, maximal fünf Dateien à 10 MB
 - Textextraktion aus PDF, DOCX und Textdateien
 - evidenzbasierter Stellenabgleich ohne erfundene Qualifikationen
 - Profil-Highlights, offene Anforderungen und fünf konkrete Lebenslaufhinweise
