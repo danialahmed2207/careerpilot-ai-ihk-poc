@@ -43,7 +43,8 @@ main { min-height: 100vh; }
 }
 .brand { color: var(--ink); text-decoration: none; display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 650; }
 .brand b { color: var(--teal); }
-.brandMark { width: 34px; height: 34px; display: grid; place-items: center; color: white; border-radius: 10px; background: var(--teal); box-shadow: 0 6px 16px rgba(8,127,117,.24); }
+.brandMark { width: 40px; height: 40px; flex: 0 0 40px; position: relative; overflow: hidden; border: 1px solid rgba(8,127,117,.18); border-radius: 11px; background: white; box-shadow: 0 6px 16px rgba(8,127,117,.2); }
+.brandMark img { width: 68px; height: 68px; max-width: none; position: absolute; top: -3px; left: 50%; transform: translateX(-50%); }
 .topbarActions { display: flex; align-items: center; gap: 12px; }
 .demoPill, .humanBadge { padding: 7px 11px; border-radius: 999px; background: var(--teal-soft); color: var(--teal-dark); font-size: 12px; font-weight: 750; letter-spacing: .02em; }
 
