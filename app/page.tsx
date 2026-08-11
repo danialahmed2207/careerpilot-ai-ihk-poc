@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useMemo, useRef, useState } from "react";
 import { suggestRoles } from "./lib/role-suggestions";
 
@@ -176,7 +177,9 @@ export default function Home() {
     <main>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="CareerPilot AI Startseite">
-          <span className="brandMark">C</span>
+          <span className="brandMark" aria-hidden="true">
+            <Image src="/careerpilot-logo.png" alt="" width={68} height={68} priority />
+          </span>
           <span>CareerPilot <b>AI</b></span>
         </a>
         <div className="topbarActions">
